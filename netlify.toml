@@ -10,12 +10,17 @@
   SHARP_IGNORE_GLOBAL_LIBVIPS = "1"
 
 [functions]
-  # Increase function timeout and memory for image processing
   node_bundler = "esbuild"
   external_node_modules = ["sharp", "heic-convert"]
   included_files = ["node_modules/sharp/**/*", "node_modules/heic-convert/**/*"]
-  memory = 1024 # Increase memory to 1GB
-  timeout = 30 # Increase timeout to 30 seconds
+
+# Configure function settings
+[[functions]]
+  included_files = ["node_modules/sharp/**/*", "node_modules/heic-convert/**/*"]
+  external_node_modules = ["sharp", "heic-convert"]
+
+[functions.convert]
+  timeout = 30
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
@@ -26,4 +31,4 @@
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Permissions-Policy = "camera=(), microphone=(), geolocation=()" 
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
