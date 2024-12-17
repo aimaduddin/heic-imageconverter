@@ -1,12 +1,14 @@
-import { Dispatch, SetStateAction } from 'react'
+import { useState } from 'react'
 
 interface ConversionOptionsProps {
   outputFormat: 'jpg' | 'png' | 'webp'
-  setOutputFormat: Dispatch<SetStateAction<'jpg' | 'png' | 'webp'>>
+  setOutputFormat: (format: 'jpg' | 'png' | 'webp') => void
   quality: number
-  setQuality: Dispatch<SetStateAction<number>>
+  setQuality: (quality: number) => void
   resize: { width: number; height: number }
-  setResize: Dispatch<SetStateAction<{ width: number; height: number }>>
+  setResize: (resize: { width: number; height: number }) => void
+  targetFileSize: number
+  setTargetFileSize: (size: number) => void
 }
 
 export default function ConversionOptions({
@@ -16,61 +18,110 @@ export default function ConversionOptions({
   setQuality,
   resize,
   setResize,
+  targetFileSize,
+  setTargetFileSize,
 }: ConversionOptionsProps) {
+  const [useTargetSize, setUseTargetSize] = useState(false)
+
+  const handleResizeChange = (dimension: 'width' | 'height', value: string) => {
+    const numValue = value === '' ? 0 : parseInt(value)
+    setResize({ ...resize, [dimension]: numValue })
+  }
+
+  const handleTargetSizeChange = (value: string) => {
+    const numValue = value === '' ? 0 : parseInt(value)
+    setTargetFileSize(numValue)
+  }
+
   return (
     <div className="space-y-4">
       <div>
-        <label htmlFor="format" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
           Output Format
         </label>
         <select
-          id="format"
           value={outputFormat}
           onChange={(e) => setOutputFormat(e.target.value as 'jpg' | 'png' | 'webp')}
-          className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+          className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
         >
-          <option value="jpg">JPG</option>
+          <option value="jpg">JPEG</option>
           <option value="png">PNG</option>
           <option value="webp">WebP</option>
         </select>
       </div>
-      <div>
-        <label htmlFor="quality" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-          Quality: {quality}%
+
+      <div className="space-y-2">
+        <label className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={useTargetSize}
+            onChange={(e) => setUseTargetSize(e.target.checked)}
+            className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+          />
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            Use Target File Size
+          </span>
         </label>
-        <input
-          type="range"
-          id="quality"
-          min="1"
-          max="100"
-          value={quality}
-          onChange={(e) => setQuality(Number(e.target.value))}
-          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
-        />
+
+        {useTargetSize ? (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Target File Size (KB)
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="10000"
+              value={targetFileSize}
+              onChange={(e) => handleTargetSizeChange(e.target.value)}
+              className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            />
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              Target size in kilobytes (1000KB = 1MB)
+            </p>
+          </div>
+        ) : (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Quality ({quality}%)
+            </label>
+            <input
+              type="range"
+              min="1"
+              max="100"
+              value={quality}
+              onChange={(e) => setQuality(parseInt(e.target.value))}
+              className="mt-1 block w-full"
+            />
+          </div>
+        )}
       </div>
+
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label htmlFor="width" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            Width (px)
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            Width (optional)
           </label>
           <input
             type="number"
-            id="width"
+            min="0"
             value={resize.width}
-            onChange={(e) => setResize({ ...resize, width: Number(e.target.value) })}
-            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+            onChange={(e) => handleResizeChange('width', e.target.value)}
+            placeholder="Auto"
+            className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
           />
         </div>
         <div>
-          <label htmlFor="height" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            Height (px)
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            Height (optional)
           </label>
           <input
             type="number"
-            id="height"
+            min="0"
             value={resize.height}
-            onChange={(e) => setResize({ ...resize, height: Number(e.target.value) })}
-            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+            onChange={(e) => handleResizeChange('height', e.target.value)}
+            placeholder="Auto"
+            className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
           />
         </div>
       </div>

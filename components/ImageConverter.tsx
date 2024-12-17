@@ -15,14 +15,31 @@ export default function ImageConverter() {
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [convertedFiles, setConvertedFiles] = useState<string[]>([])
+  const [targetFileSize, setTargetFileSize] = useState(1000)
+
+  const isValidImageType = (file: File) => {
+    const validTypes = [
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/heic',
+      'image/heif',
+      'image/tiff',
+      'image/gif',
+      'image/bmp'
+    ];
+    return validTypes.includes(file.type.toLowerCase()) || 
+           file.name.toLowerCase().endsWith('.heic') || 
+           file.name.toLowerCase().endsWith('.heif');
+  };
 
   const handleFileUpload = (newFiles: File[]) => {
-    const validFiles = newFiles.filter(file => file.name.toLowerCase().endsWith('.heic'))
+    const validFiles = newFiles.filter(file => isValidImageType(file));
     if (validFiles.length !== newFiles.length) {
-      setError('Some files were not .heic format and were ignored.')
+      setError('Some files were not in a supported image format and were ignored.');
     }
-    setFiles(prevFiles => [...prevFiles, ...validFiles])
-  }
+    setFiles(prevFiles => [...prevFiles, ...validFiles]);
+  };
 
   const convertFile = async (file: File): Promise<string> => {
     const formData = new FormData();
@@ -31,6 +48,7 @@ export default function ImageConverter() {
     formData.append('quality', quality.toString());
     formData.append('width', resize.width.toString());
     formData.append('height', resize.height.toString());
+    formData.append('targetFileSize', targetFileSize.toString());
 
     const response = await fetch('/api/convert', {
       method: 'POST',
@@ -48,7 +66,7 @@ export default function ImageConverter() {
 
   const handleConvert = async () => {
     if (files.length === 0) {
-      setError('Please upload at least one HEIC file');
+      setError('Please upload at least one image file');
       return;
     }
 
@@ -96,6 +114,8 @@ export default function ImageConverter() {
         setQuality={setQuality}
         resize={resize}
         setResize={setResize}
+        targetFileSize={targetFileSize}
+        setTargetFileSize={setTargetFileSize}
       />
       <button
         onClick={handleConvert}
