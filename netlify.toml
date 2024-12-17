@@ -9,15 +9,11 @@
   NPM_FLAGS = "--no-audit --no-fund"
   SHARP_IGNORE_GLOBAL_LIBVIPS = "1"
 
-[functions]
+[[functions]]
   node_bundler = "esbuild"
   external_node_modules = ["sharp", "heic-convert"]
   included_files = ["node_modules/sharp/**/*", "node_modules/heic-convert/**/*"]
-
-# Configure function settings
-[[functions]]
-  included_files = ["node_modules/sharp/**/*", "node_modules/heic-convert/**/*"]
-  external_node_modules = ["sharp", "heic-convert"]
+  directory = "netlify/functions"
 
 [functions.convert]
   timeout = 30
