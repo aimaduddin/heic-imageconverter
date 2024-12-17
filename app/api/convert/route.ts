@@ -2,138 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
 import heicConvert from 'heic-convert';
 
-// Create a type declaration for heic-convert
-declare module 'heic-convert' {
-  function heicConvert(options: {
-    buffer: Buffer;
-    format: 'JPEG' | 'PNG' | 'WEBP';
-    quality?: number;
-  }): Promise<Buffer>;
-  export default heicConvert;
-}
-
-async function optimizeWebP(
-  sharpInstance: sharp.Sharp,
-  quality: number,
-  targetSizeKB: number | null = null
-): Promise<Buffer> {
-  const instance = sharpInstance.clone();
-  
-  // If no target size, do direct WebP conversion
-  if (!targetSizeKB) {
-    return instance
-      .webp({
-        quality,
-        effort: 6,
-        preset: 'photo',
-        smartSubsample: true,
-        reductionEffort: 6,
-      })
-      .toBuffer();
-  }
-
-  console.log('Converting to target size JPEG first...');
-
-  // Step 1: Convert to JPEG with target size
-  const jpegBuffer = await compressToTargetSize(
-    instance,
-    'jpg',
-    targetSizeKB,
-    1,
-    95, // Cap JPEG quality at 95 for better compression
-    10
-  );
-
-  console.log('Converting optimized JPEG to WebP...');
-
-  // Step 2: Convert the optimized JPEG to WebP
-  // Start with slightly higher quality for WebP since it usually compresses better
-  const initialQuality = Math.min(quality, 90);
-  let webpBuffer = await sharp(jpegBuffer)
-    .webp({
-      quality: initialQuality,
-      effort: 6,
-      preset: 'photo',
-      smartSubsample: true,
-      reductionEffort: 6,
-    })
-    .toBuffer();
-
-  // If WebP is larger than target, compress it further
-  if (webpBuffer.length > targetSizeKB * 1024) {
-    console.log('Initial WebP larger than target, adjusting quality...');
-    
-    // Calculate new quality based on size ratio
-    const currentSize = webpBuffer.length / 1024;
-    const sizeRatio = targetSizeKB / currentSize;
-    const newQuality = Math.max(Math.floor(initialQuality * sizeRatio * 0.95), 1);
-    
-    webpBuffer = await sharp(jpegBuffer)
-      .webp({
-        quality: newQuality,
-        effort: 6,
-        preset: 'photo',
-        smartSubsample: true,
-        reductionEffort: 6,
-      })
-      .toBuffer();
-  }
-
-  const finalSize = webpBuffer.length / 1024;
-  console.log(`Final WebP size: ${finalSize.toFixed(2)}KB`);
-  
-  return webpBuffer;
-}
-
-async function getOutputBuffer(
-  sharpInstance: sharp.Sharp,
-  format: string,
-  quality: number,
-  lastResort: boolean = false,
-  targetSizeKB: number | null = null
-): Promise<Buffer> {
-  const instance = sharpInstance.clone();
-
-  // Apply additional compression for very small target sizes or last resort
-  if ((targetSizeKB && targetSizeKB < 500) || quality < 30 || lastResort) {
-    instance.resize({
-      width: instance.width ? Math.round(instance.width * 0.9) : undefined,
-      height: instance.height ? Math.round(instance.height * 0.9) : undefined,
-      fit: 'inside',
-    });
-  }
-
-  switch (format) {
-    case 'jpg':
-      return instance
-        .jpeg({
-          quality,
-          mozjpeg: true,
-          chromaSubsampling: quality < 50 ? '4:2:0' : '4:4:4',
-          trellisQuantisation: true,
-          overshootDeringing: true,
-          optimizeScans: true,
-          optimizeCoding: true,
-          quantisationTable: quality < 50 ? 8 : 4,
-        })
-        .toBuffer();
-
-    case 'png':
-      return instance
-        .png({
-          quality,
-          compressionLevel: 9,
-          palette: true,
-          colors: quality < 50 ? 128 : 256,
-          dither: quality < 50 ? 1 : 0.5,
-        })
-        .toBuffer();
-
-    case 'webp':
-      return optimizeWebP(instance, quality, targetSizeKB);
-
-    default:
-      throw new Error('Unsupported format');
+// Helper function to get image dimensions
+async function getImageDimensions(instance: sharp.Sharp): Promise<{ width?: number; height?: number }> {
+  try {
+    const metadata = await instance.metadata();
+    return {
+      width: metadata.width,
+      height: metadata.height
+    };
+  } catch (error) {
+    console.error('Error getting image dimensions:', error);
+    return {};
   }
 }
 
@@ -209,7 +88,7 @@ async function compressToTargetSize(
     return lastValidBuffer;
   }
 
-  // If we still couldn't achieve the target size, try one last time with minimum quality and additional compression
+  // If we still couldn't achieve the target size, try one last time with minimum quality
   try {
     const lastResortBuffer = await getOutputBuffer(sharpInstance, format, minQuality, true);
     const finalSize = lastResortBuffer.length / 1024;
@@ -223,6 +102,131 @@ async function compressToTargetSize(
   }
 
   throw new Error(`Could not achieve target file size of ${targetSizeKB}KB. Smallest possible size: ${lastSize.toFixed(2)}KB`);
+}
+
+async function optimizeWebP(
+  sharpInstance: sharp.Sharp,
+  quality: number,
+  targetSizeKB: number | null = null
+): Promise<Buffer> {
+  const instance = sharpInstance.clone();
+  
+  // If no target size, do direct WebP conversion
+  if (!targetSizeKB) {
+    return instance
+      .webp({
+        quality,
+        effort: 6,
+        preset: 'photo',
+        smartSubsample: true,
+      })
+      .toBuffer();
+  }
+
+  console.log('Converting to target size JPEG first...');
+
+  // Step 1: Convert to JPEG with target size
+  const jpegBuffer = await compressToTargetSize(
+    instance,
+    'jpg',
+    targetSizeKB,
+    1,
+    95, // Cap JPEG quality at 95 for better compression
+    10
+  );
+
+  console.log('Converting optimized JPEG to WebP...');
+
+  // Step 2: Convert the optimized JPEG to WebP
+  // Start with slightly higher quality for WebP since it usually compresses better
+  const initialQuality = Math.min(quality, 90);
+  let webpBuffer = await sharp(jpegBuffer)
+    .webp({
+      quality: initialQuality,
+      effort: 6,
+      preset: 'photo',
+      smartSubsample: true,
+    })
+    .toBuffer();
+
+  // If WebP is larger than target, compress it further
+  if (webpBuffer.length > targetSizeKB * 1024) {
+    console.log('Initial WebP larger than target, adjusting quality...');
+    
+    // Calculate new quality based on size ratio
+    const currentSize = webpBuffer.length / 1024;
+    const sizeRatio = targetSizeKB / currentSize;
+    const newQuality = Math.max(Math.floor(initialQuality * sizeRatio * 0.95), 1);
+    
+    webpBuffer = await sharp(jpegBuffer)
+      .webp({
+        quality: newQuality,
+        effort: 6,
+        preset: 'photo',
+        smartSubsample: true,
+      })
+      .toBuffer();
+  }
+
+  const finalSize = webpBuffer.length / 1024;
+  console.log(`Final WebP size: ${finalSize.toFixed(2)}KB`);
+  
+  return webpBuffer;
+}
+
+async function getOutputBuffer(
+  sharpInstance: sharp.Sharp,
+  format: string,
+  quality: number,
+  lastResort: boolean = false,
+  targetSizeKB: number | null = null
+): Promise<Buffer> {
+  const instance = sharpInstance.clone();
+
+  // Apply additional compression for very small target sizes or last resort
+  if ((targetSizeKB && targetSizeKB < 500) || quality < 30 || lastResort) {
+    const dimensions = await getImageDimensions(instance);
+    if (dimensions.width && dimensions.height) {
+      instance.resize({
+        width: Math.round(dimensions.width * 0.9),
+        height: Math.round(dimensions.height * 0.9),
+        fit: 'inside',
+      });
+    }
+  }
+
+  switch (format) {
+    case 'jpg':
+      return instance
+        .jpeg({
+          quality,
+          mozjpeg: true,
+          chromaSubsampling: quality < 50 ? '4:2:0' : '4:4:4',
+          trellisQuantisation: true,
+          overshootDeringing: true,
+          optimizeScans: true,
+          optimizeCoding: true,
+          quantisationTable: quality < 50 ? 8 : 4,
+        })
+        .toBuffer();
+
+    case 'png':
+      return instance
+        .png({
+          quality,
+          compressionLevel: 9,
+          palette: true,
+          colors: quality < 50 ? 128 : 256,
+          dither: quality < 50 ? 0.5 : 0,
+        })
+        .toBuffer();
+
+    case 'webp':
+      return optimizeWebP(instance, quality, targetSizeKB);
+
+    default:
+      throw new Error('Unsupported format');
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -263,7 +267,9 @@ export async function POST(req: NextRequest) {
 
     // Apply resize if dimensions are provided
     if (width && height) {
-      sharpInstance = sharpInstance.resize(width, height, {
+      sharpInstance = sharpInstance.resize({
+        width,
+        height,
         fit: 'inside',
         withoutEnlargement: true,
         kernel: sharp.kernel.lanczos3,
@@ -312,10 +318,8 @@ export async function POST(req: NextRequest) {
             .webp({
               quality: optimizedQuality,
               effort: 6,
-              alphaQuality: optimizedQuality,
-              nearLossless: quality > 90,
+              preset: 'photo',
               smartSubsample: true,
-              reductionEffort: 6,
             })
             .toBuffer();
           break;
