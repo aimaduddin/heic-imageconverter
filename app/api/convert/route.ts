@@ -3,7 +3,34 @@ import sharp from 'sharp';
 import heicConvert from 'heic-convert';
 import { promisify } from 'util';
 
-const heicConvertAsync = promisify(heicConvert as any);
+// Define proper types for heic-convert
+interface HeicConvertOptions {
+  buffer: Buffer;
+  format: 'JPEG' | 'PNG' | 'WEBP';
+  quality?: number;
+}
+
+// Define the callback-style function type
+type HeicConvertCallback = (
+  error: Error | null,
+  convertedBuffer: Buffer
+) => void;
+
+// Define the function type that takes options and callback
+type HeicConvertFunction = (
+  options: HeicConvertOptions,
+  callback: HeicConvertCallback
+) => void;
+
+// Create a properly typed promisified version
+const heicConvertAsync = (options: HeicConvertOptions): Promise<Buffer> => {
+  return new Promise((resolve, reject) => {
+    (heicConvert as HeicConvertFunction)(options, (error, result) => {
+      if (error) reject(error);
+      else resolve(result);
+    });
+  });
+};
 
 // Helper function to get image dimensions
 async function getImageDimensions(instance: sharp.Sharp): Promise<{ width?: number; height?: number }> {
