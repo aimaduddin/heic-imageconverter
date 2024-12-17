@@ -288,13 +288,9 @@ async function getOutputBuffer(
   }
 }
 
+export const runtime = 'nodejs'; // 'nodejs' runtime is required for sharp and heic-convert
+export const dynamic = 'force-dynamic'; // Force dynamic rendering
 export const maxDuration = 30; // Set max duration for Netlify function
-export const config = {
-  api: {
-    bodyParser: false, // Disable body parser as we're handling FormData
-    responseLimit: false, // Remove response size limit
-  },
-};
 
 export async function POST(req: NextRequest) {
   try {
