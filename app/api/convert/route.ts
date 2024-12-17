@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
 import heicConvert from 'heic-convert';
+import { promisify } from 'util';
+
+const heicConvertAsync = promisify(heicConvert as any);
 
 // Helper function to get image dimensions
 async function getImageDimensions(instance: sharp.Sharp): Promise<{ width?: number; height?: number }> {
@@ -13,6 +16,36 @@ async function getImageDimensions(instance: sharp.Sharp): Promise<{ width?: numb
   } catch (error) {
     console.error('Error getting image dimensions:', error);
     return {};
+  }
+}
+
+// Helper function to convert HEIC to JPEG
+async function convertHeicToJpeg(buffer: Buffer): Promise<Buffer> {
+  try {
+    // First try with heic-convert
+    try {
+      const convertedBuffer = await heicConvertAsync({
+        buffer: buffer,
+        format: 'JPEG',
+        quality: 1
+      });
+      return convertedBuffer;
+    } catch (heicError) {
+      console.error('heic-convert error:', heicError);
+      
+      // If heic-convert fails, try with sharp
+      const sharpBuffer = await sharp(buffer)
+        .jpeg({
+          quality: 100,
+          mozjpeg: true,
+        })
+        .toBuffer();
+      
+      return sharpBuffer;
+    }
+  } catch (error) {
+    console.error('All HEIC conversion methods failed:', error);
+    throw new Error('Failed to convert HEIC image. Please try a different image or format.');
   }
 }
 
@@ -252,18 +285,22 @@ export async function POST(req: NextRequest) {
     // Handle different input formats
     if (file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif')) {
       try {
-        // Convert HEIC/HEIF to JPEG first
-        inputBuffer = await heicConvert({
-          buffer: buffer,
-          format: 'JPEG',
-          quality: 1
-        });
+        inputBuffer = await convertHeicToJpeg(buffer);
+        
+        // Verify the converted buffer is valid
+        try {
+          await sharp(inputBuffer).metadata();
+        } catch (verifyError) {
+          console.error('Invalid converted buffer:', verifyError);
+          throw new Error('Converted image is invalid');
+        }
       } catch (heicError) {
         console.error('HEIC conversion error:', heicError);
         return NextResponse.json(
           { 
             error: 'Failed to convert HEIC image',
-            details: heicError instanceof Error ? heicError.message : 'Unknown error'
+            details: heicError instanceof Error ? heicError.message : 'Unknown error',
+            fileName: file.name
           },
           { status: 500 }
         );
@@ -276,13 +313,20 @@ export async function POST(req: NextRequest) {
     // Create sharp instance with the input buffer
     let sharpInstance: sharp.Sharp;
     try {
-      sharpInstance = sharp(inputBuffer);
+      sharpInstance = sharp(inputBuffer, {
+        failOnError: false, // Try to handle corrupted images
+        limitInputPixels: 268402689 // 16384 x 16384 pixels
+      });
+      
+      // Verify the sharp instance is valid
+      await sharpInstance.metadata();
     } catch (sharpError) {
       console.error('Sharp initialization error:', sharpError);
       return NextResponse.json(
         { 
           error: 'Failed to process image',
-          details: sharpError instanceof Error ? sharpError.message : 'Unknown error'
+          details: sharpError instanceof Error ? sharpError.message : 'Unknown error',
+          fileName: file.name
         },
         { status: 500 }
       );

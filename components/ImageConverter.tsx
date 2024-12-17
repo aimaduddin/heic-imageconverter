@@ -50,18 +50,42 @@ export default function ImageConverter() {
     formData.append('height', resize.height.toString());
     formData.append('targetFileSize', targetFileSize.toString());
 
-    const response = await fetch('/api/convert', {
-      method: 'POST',
-      body: formData,
-    });
+    try {
+      const response = await fetch('/api/convert', {
+        method: 'POST',
+        body: formData,
+      });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to convert image');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({
+          error: 'Failed to parse error response',
+          details: 'Unknown error'
+        }));
+        
+        throw new Error(
+          errorData.details || 
+          errorData.error || 
+          `Failed to convert image: ${response.statusText}`
+        );
+      }
+
+      // Check if the response is JSON (error) or blob (success)
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const errorData = await response.json();
+        throw new Error(errorData.details || errorData.error || 'Failed to convert image');
+      }
+
+      const blob = await response.blob();
+      if (blob.size === 0) {
+        throw new Error('Converted image is empty');
+      }
+
+      return URL.createObjectURL(blob);
+    } catch (error) {
+      console.error(`Error converting ${file.name}:`, error);
+      throw error;
     }
-
-    const blob = await response.blob();
-    return URL.createObjectURL(blob);
   };
 
   const handleConvert = async () => {
@@ -77,6 +101,7 @@ export default function ImageConverter() {
     try {
       const totalFiles = files.length;
       const converted: string[] = [];
+      let hasErrors = false;
 
       for (let i = 0; i < totalFiles; i++) {
         const file = files[i];
@@ -85,14 +110,23 @@ export default function ImageConverter() {
           converted.push(url);
           setProgress(((i + 1) / totalFiles) * 100);
         } catch (error) {
+          hasErrors = true;
           console.error(`Error converting ${file.name}:`, error);
-          setError(`Failed to convert ${file.name}`);
+          setError(`Failed to convert ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          // Continue with next file instead of breaking
         }
       }
 
-      setConvertedFiles(converted);
+      if (converted.length > 0) {
+        setConvertedFiles(converted);
+        if (hasErrors) {
+          setError('Some files failed to convert. Successfully converted files are shown below.');
+        }
+      } else {
+        setError('All files failed to convert. Please try again with different files or settings.');
+      }
     } catch (error) {
-      setError('An error occurred during conversion');
+      setError('An error occurred during conversion. Please try again.');
       console.error('Conversion error:', error);
     }
   };
