@@ -251,97 +251,145 @@ export async function POST(req: NextRequest) {
 
     // Handle different input formats
     if (file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif')) {
-      // Convert HEIC/HEIF to JPEG first
-      inputBuffer = await heicConvert({
-        buffer: buffer,
-        format: 'JPEG',
-        quality: 1
-      });
+      try {
+        // Convert HEIC/HEIF to JPEG first
+        inputBuffer = await heicConvert({
+          buffer: buffer,
+          format: 'JPEG',
+          quality: 1
+        });
+      } catch (heicError) {
+        console.error('HEIC conversion error:', heicError);
+        return NextResponse.json(
+          { 
+            error: 'Failed to convert HEIC image',
+            details: heicError instanceof Error ? heicError.message : 'Unknown error'
+          },
+          { status: 500 }
+        );
+      }
     } else {
       // For all other formats, use the buffer directly
       inputBuffer = buffer;
     }
 
     // Create sharp instance with the input buffer
-    let sharpInstance = sharp(inputBuffer);
+    let sharpInstance: sharp.Sharp;
+    try {
+      sharpInstance = sharp(inputBuffer);
+    } catch (sharpError) {
+      console.error('Sharp initialization error:', sharpError);
+      return NextResponse.json(
+        { 
+          error: 'Failed to process image',
+          details: sharpError instanceof Error ? sharpError.message : 'Unknown error'
+        },
+        { status: 500 }
+      );
+    }
 
     // Apply resize if dimensions are provided
     if (width && height) {
-      sharpInstance = sharpInstance.resize({
-        width,
-        height,
-        fit: 'inside',
-        withoutEnlargement: true,
-        kernel: sharp.kernel.lanczos3,
-      });
-    }
-
-    let outputBuffer;
-    if (targetFileSize > 0) {
-      // Use target file size compression
-      outputBuffer = await compressToTargetSize(
-        sharpInstance,
-        format,
-        targetFileSize
-      );
-    } else {
-      // Use quality-based compression
-      const optimizedQuality = Math.max(Math.min(Math.round(quality * 0.7), 100), 1);
-      
-      switch (format) {
-        case 'jpg':
-          outputBuffer = await sharpInstance
-            .jpeg({
-              quality: optimizedQuality,
-              mozjpeg: true,
-              chromaSubsampling: quality < 80 ? '4:2:0' : '4:4:4',
-              trellisQuantisation: true,
-              overshootDeringing: true,
-              optimizeScans: true,
-              optimizeCoding: true,
-            })
-            .toBuffer();
-          break;
-        case 'png':
-          outputBuffer = await sharpInstance
-            .png({
-              quality: optimizedQuality,
-              compressionLevel: 9,
-              palette: quality < 90,
-              colors: quality < 90 ? Math.min(256, Math.round(Math.pow(2, quality / 10))) : 256,
-              dither: quality < 90 ? 0.5 : 0,
-            })
-            .toBuffer();
-          break;
-        case 'webp':
-          outputBuffer = await sharpInstance
-            .webp({
-              quality: optimizedQuality,
-              effort: 6,
-              preset: 'photo',
-              smartSubsample: true,
-            })
-            .toBuffer();
-          break;
-        default:
-          return NextResponse.json(
-            { error: 'Unsupported format' },
-            { status: 400 }
-          );
+      try {
+        sharpInstance = sharpInstance.resize({
+          width,
+          height,
+          fit: 'inside',
+          withoutEnlargement: true,
+          kernel: sharp.kernel.lanczos3,
+        });
+      } catch (resizeError) {
+        console.error('Resize error:', resizeError);
+        return NextResponse.json(
+          { 
+            error: 'Failed to resize image',
+            details: resizeError instanceof Error ? resizeError.message : 'Unknown error'
+          },
+          { status: 500 }
+        );
       }
     }
 
-    // Return the converted image as a response
-    return new NextResponse(outputBuffer, {
-      headers: {
-        'Content-Type': `image/${format === 'jpg' ? 'jpeg' : format}`,
-        'Content-Disposition': `attachment; filename="converted.${format}"`,
-      },
-    });
+    let outputBuffer;
+    try {
+      if (targetFileSize > 0) {
+        // Use target file size compression
+        outputBuffer = await compressToTargetSize(
+          sharpInstance,
+          format,
+          targetFileSize
+        );
+      } else {
+        // Use quality-based compression
+        const optimizedQuality = Math.max(Math.min(Math.round(quality * 0.7), 100), 1);
+        
+        switch (format) {
+          case 'jpg':
+            outputBuffer = await sharpInstance
+              .jpeg({
+                quality: optimizedQuality,
+                mozjpeg: true,
+                chromaSubsampling: quality < 80 ? '4:2:0' : '4:4:4',
+                trellisQuantisation: true,
+                overshootDeringing: true,
+                optimizeScans: true,
+                optimizeCoding: true,
+              })
+              .toBuffer();
+            break;
+          case 'png':
+            outputBuffer = await sharpInstance
+              .png({
+                quality: optimizedQuality,
+                compressionLevel: 9,
+                palette: quality < 90,
+                colors: quality < 90 ? Math.min(256, Math.round(Math.pow(2, quality / 10))) : 256,
+                dither: quality < 90 ? 0.5 : 0,
+              })
+              .toBuffer();
+            break;
+          case 'webp':
+            outputBuffer = await sharpInstance
+              .webp({
+                quality: optimizedQuality,
+                effort: 6,
+                preset: 'photo',
+                smartSubsample: true,
+              })
+              .toBuffer();
+            break;
+          default:
+            return NextResponse.json(
+              { error: 'Unsupported format' },
+              { status: 400 }
+            );
+        }
+      }
+
+      // Return the converted image as a response
+      return new NextResponse(outputBuffer, {
+        headers: {
+          'Content-Type': `image/${format === 'jpg' ? 'jpeg' : format}`,
+          'Content-Disposition': `attachment; filename="converted.${format}"`,
+        },
+      });
+    } catch (conversionError) {
+      console.error('Conversion error:', conversionError);
+      return NextResponse.json(
+        { 
+          error: 'Failed to convert image',
+          details: conversionError instanceof Error ? conversionError.message : 'Unknown error'
+        },
+        { status: 500 }
+      );
+    }
   } catch (error) {
-    console.error('Conversion error:', error);
+    console.error('General error:', error);
     return NextResponse.json(
-      { error: 'Failed to convert image' },
+      { 
+        error: 'Failed to process request',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }

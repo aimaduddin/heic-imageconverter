@@ -1,0 +1,26 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NEXT_TELEMETRY_DISABLED = "1"
+  NODE_VERSION = "18"
+  # Enable node-gyp and native module compilation
+  NPM_FLAGS = "--no-audit --no-fund"
+  SHARP_IGNORE_GLOBAL_LIBVIPS = "1"
+
+[functions]
+  # Increase function timeout for image processing
+  node_bundler = "esbuild"
+  external_node_modules = ["sharp", "heic-convert"]
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()" 
