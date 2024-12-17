@@ -288,8 +288,17 @@ async function getOutputBuffer(
   }
 }
 
+export const maxDuration = 30; // Set max duration for Netlify function
+export const config = {
+  api: {
+    bodyParser: false, // Disable body parser as we're handling FormData
+    responseLimit: false, // Remove response size limit
+  },
+};
+
 export async function POST(req: NextRequest) {
   try {
+    console.log('Starting image conversion process...');
     const formData = await req.formData();
     const file = formData.get('file') as File;
     const format = formData.get('format') as string;
@@ -298,6 +307,17 @@ export async function POST(req: NextRequest) {
     const height = parseInt(formData.get('height') as string);
     const targetFileSize = parseInt(formData.get('targetFileSize') as string);
 
+    // Log input parameters
+    console.log('Input parameters:', {
+      fileName: file?.name,
+      fileSize: file?.size,
+      format,
+      quality,
+      width,
+      height,
+      targetFileSize,
+    });
+
     if (!file || !format) {
       return NextResponse.json(
         { error: 'File and format are required' },
@@ -305,17 +325,34 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Add file size limit check
+    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { 
+          error: 'File too large',
+          details: `Maximum file size is 50MB. Your file is ${(file.size / (1024 * 1024)).toFixed(2)}MB`,
+          fileName: file.name
+        },
+        { status: 400 }
+      );
+    }
+
     const buffer = Buffer.from(await file.arrayBuffer());
+    console.log('File buffer created, size:', buffer.length);
     let inputBuffer: Buffer;
 
     // Handle different input formats
     if (file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif')) {
+      console.log('Converting HEIC/HEIF file...');
       try {
         inputBuffer = await convertHeicToJpeg(buffer);
+        console.log('HEIC conversion successful, buffer size:', inputBuffer.length);
         
         // Verify the converted buffer is valid
         try {
-          await sharp(inputBuffer).metadata();
+          const metadata = await sharp(inputBuffer).metadata();
+          console.log('Converted image metadata:', metadata);
         } catch (verifyError) {
           console.error('Invalid converted buffer:', verifyError);
           throw new Error('Converted image is invalid');
@@ -332,7 +369,7 @@ export async function POST(req: NextRequest) {
         );
       }
     } else {
-      // For all other formats, use the buffer directly
+      console.log('Using direct buffer for non-HEIC file');
       inputBuffer = buffer;
     }
 
@@ -341,11 +378,13 @@ export async function POST(req: NextRequest) {
     try {
       sharpInstance = sharp(inputBuffer, {
         failOnError: false, // Try to handle corrupted images
-        limitInputPixels: 268402689 // 16384 x 16384 pixels
+        limitInputPixels: 268402689, // 16384 x 16384 pixels
+        sequentialRead: true, // Add sequential read for better memory usage
       });
       
       // Verify the sharp instance is valid
-      await sharpInstance.metadata();
+      const metadata = await sharpInstance.metadata();
+      console.log('Input image metadata:', metadata);
     } catch (sharpError) {
       console.error('Sharp initialization error:', sharpError);
       return NextResponse.json(
@@ -458,7 +497,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { 
         error: 'Failed to process request',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
       },
       { status: 500 }
     );
