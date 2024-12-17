@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
 import heicConvert from 'heic-convert';
-import { promisify } from 'util';
 
 // Define proper types for heic-convert
 interface HeicConvertOptions {
